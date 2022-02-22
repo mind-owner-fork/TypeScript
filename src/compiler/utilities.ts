@@ -211,7 +211,7 @@ namespace ts {
     }
 
     export function hasChangesInResolutions<T>(
-        names: readonly string[],
+        names: readonly string[] | readonly FileReference[],
         newResolutions: readonly T[],
         oldResolutions: ModeAwareCache<T> | undefined,
         oldSourceFile: SourceFile | undefined,
@@ -220,7 +220,11 @@ namespace ts {
 
         for (let i = 0; i < names.length; i++) {
             const newResolution = newResolutions[i];
-            const oldResolution = oldResolutions && oldResolutions.get(names[i], oldSourceFile && getModeForResolutionAtIndex(oldSourceFile, i));
+            const entry = names[i];
+            // We lower-case all type references because npm automatically lowercases all packages. See GH#9824.
+            const name = !isString(entry) ? entry.fileName.toLowerCase() : entry;
+            const mode = !isString(entry) ? getModeForFileReference(entry, oldSourceFile?.impliedNodeFormat) : oldSourceFile && getModeForResolutionAtIndex(oldSourceFile, i);
+            const oldResolution = oldResolutions && oldResolutions.get(name, mode);
             const changed =
                 oldResolution
                     ? !newResolution || !comparer(oldResolution, newResolution)
@@ -1300,7 +1304,7 @@ namespace ts {
             case SyntaxKind.VoidKeyword:
                 return node.parent.kind !== SyntaxKind.VoidExpression;
             case SyntaxKind.ExpressionWithTypeArguments:
-                return !isExpressionWithTypeArgumentsInClassExtendsClause(node);
+                return isHeritageClause(node.parent) && !isExpressionWithTypeArgumentsInClassExtendsClause(node);
             case SyntaxKind.TypeParameter:
                 return node.parent.kind === SyntaxKind.MappedType || node.parent.kind === SyntaxKind.InferType;
 
@@ -1340,7 +1344,7 @@ namespace ts {
                 }
                 switch (parent.kind) {
                     case SyntaxKind.ExpressionWithTypeArguments:
-                        return !isExpressionWithTypeArgumentsInClassExtendsClause(parent);
+                        return isHeritageClause(parent.parent) && !isExpressionWithTypeArgumentsInClassExtendsClause(parent);
                     case SyntaxKind.TypeParameter:
                         return node === (parent as TypeParameterDeclaration).constraint;
                     case SyntaxKind.JSDocTemplateTag:
@@ -2066,7 +2070,7 @@ namespace ts {
             case SyntaxKind.SpreadAssignment:
                 return true;
             case SyntaxKind.ExpressionWithTypeArguments:
-                return (parent as ExpressionWithTypeArguments).expression === node && isExpressionWithTypeArgumentsInClassExtendsClause(parent);
+                return (parent as ExpressionWithTypeArguments).expression === node && !isPartOfTypeNode(parent);
             case SyntaxKind.ShorthandPropertyAssignment:
                 return (parent as ShorthandPropertyAssignment).objectAssignmentInitializer === node;
             default:
@@ -6384,7 +6388,7 @@ namespace ts {
          * don't include automatic type reference directives. Must be called only when
          * `hasProcessedResolutions` returns false (once per cache instance).
          */
-        setSymlinksFromResolutions(files: readonly SourceFile[], typeReferenceDirectives: ReadonlyESMap<string, ResolvedTypeReferenceDirective | undefined> | undefined): void;
+        setSymlinksFromResolutions(files: readonly SourceFile[], typeReferenceDirectives: ModeAwareCache<ResolvedTypeReferenceDirective | undefined> | undefined): void;
         /**
          * @internal
          * Whether `setSymlinksFromResolutions` has already been called.
